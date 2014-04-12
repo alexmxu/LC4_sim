@@ -1,68 +1,105 @@
-#include <stdio.h> 
+#include <stdio.h>
 #include "LC4.h"
-
-int ReadByte (FILE *src) {
-	return fgetc(src)*256 + fgetc(src);
-}
 
 int ReadObjectFile (char *filename, MachineState *theMachineState) {
 	int header_read;
 	int address;
 	int num_words;
 
- 	FILE *src_file = fopen (filename, "r"); 
- 	if (src_file == NULL) { return 1 ; } 
+	// least significant 2 bytes
+	int low;
+	// most significant 2 bytes
+	int hi;
+
+ 	FILE *src_file = fopen (filename, "r");
+ 	if (src_file == NULL) {
+		printf("ERROR: Null file\n");
+ 		return 1 ;
+ 	}
+ 	
 	do {
-		header_read = ReadByte(src_file);
+		printf("%x\n", header_read);
 
-		// end of file
-		if (header_read == EOF) {
-			return 0;
-		} else if (header_read == 0xCADE) {
-			address = ReadByte(src_file);
-			num_words = ReadByte(src_file);
+		// get 2-byte header
+		hi = fgetc (src_file) ;
+		low = fgetc (src_file) ;
+		header_read = hi*256 + low;
 
+		if (header_read == 0xCADE) {
+			// get <address>
+			hi = fgetc (src_file) ;
+			low = fgetc (src_file) ;
+			address = hi*256 + low;
+
+			// get <n>
+			hi = fgetc (src_file) ;
+			low = fgetc (src_file) ;
+			num_words = hi*256 + low;
+			
+			// there are n words
 			int i = 0;
-			while (num_words > 0) {
-				theMachineState->memory[address + i] = ReadByte(src_file);
+			while (i < num_words) {
+				hi = fgetc (src_file) ;
+				low = fgetc (src_file) ;
+				theMachineState->memory[address + i] = hi*256 + low;
 				i++;
 			}
 		} else if (header_read == 0xDADA) {
-			address = ReadByte(src_file);
-			num_words = ReadByte(src_file);
+			// get <address>
+			hi = fgetc (src_file) ;
+			low = fgetc (src_file) ;
+			address = hi*256 + low;
 
+			// get <n>
+			hi = fgetc (src_file) ;
+			low = fgetc (src_file) ;
+			num_words = hi*256 + low;
+
+			// there are n words
 			int i = 0;
-			while (num_words > 0) {
-				theMachineState->memory[address + i] = ReadByte(src_file);
+			while (i < num_words) {
+				hi = fgetc (src_file) ;
+				low = fgetc (src_file) ;
+				theMachineState->memory[address + i] = hi*256 + low;
 				i++;
 			}
 		} else if (header_read == 0xC3B7) {
-			address = ReadByte(src_file);
-			num_words = ReadByte(src_file);
+			fgetc (src_file) ;
+			fgetc (src_file) ;
+			
+			hi = fgetc (src_file) ;
+			low = fgetc (src_file) ;
+			num_words = hi*256 + low;
 
 			int i = 0;
-			while (num_words > 0) {
-				fgetc(src_file);
+			while (i < num_words) {
+				fgetc (src_file) ;
 				i++;
 			}
 		} else if (header_read == 0xF17E) {
-			num_words = ReadByte(src_file);
+			hi = fgetc (src_file) ;
+			low = fgetc (src_file) ;
+			num_words = hi*256 + low;
 
 			int i = 0;
-			while (num_words > 0) {
-				fgetc(src_file);
+			while (i < num_words) {
+				fgetc (src_file) ;
 				i++;
 			}
 		} else if (header_read == 0x715E) {
-			ReadByte(src_file);
-			ReadByte(src_file);
-			ReadByte(src_file);
-		} else {
-			return 1;
+			fgetc (src_file) ;
+			fgetc (src_file) ;
+			fgetc (src_file) ;
+			fgetc (src_file) ;
+			fgetc (src_file) ;
+			fgetc (src_file) ;
+
+		//	} else {
+//			return 1;
+			//}
 		}
-		
-	} while (1);
- 
+	} while (header_read != EOF);
+	
 	fclose (src_file);
 	return 0;
 }
