@@ -34,7 +34,6 @@ int main(int argc, char *argv[]) {
 		i++;
 	}
 
-
 	// load each obj name, first possible location for obj is 2
 	i = 2;
 	while (i < argc) {
@@ -42,10 +41,9 @@ int main(int argc, char *argv[]) {
 		if (strncmp(argv[i],"-s", 2) != 0) {
 			printf("Loading object file " "%s", argv[i]);
 			printf("\n");
-			if (ReadObjectFile(argv[i], &machine) == 1) {
+			if (ReadObjectFile(argv[i], &machine) != 0) {
 				printf ("ERROR: Invalid file\n");
 				return 1;
-				//EXCEPTION!!!!
 			}
 		}
 		i++;
@@ -54,51 +52,13 @@ int main(int argc, char *argv[]) {
 	// generate TRACE file no matter what
 	// second argument passed is filename
 	// NOTE: binary trace file will have no file extension
+	//strcat(argv[1], ".txt"), "w");
 	f_trace = fopen(argv[1], "w");
 	if (f_trace == NULL)
 	{
     	printf("Error: cannot write to file\n");
     	return(1);
 	}
-	while (machine.PC != 0x80FF) {
-		// write current PC, instruction into array
-		arr[0] = machine.PC;
-		arr[1] = machine.memory[machine.PC];
-		fwrite(arr, sizeof(short), 2, f_trace);
-
-		// simulate one step
-		DecodeCurrentInstruction (machine.memory[machine.PC], &controls);
-		SimulateDatapath (&controls, &machine, &data);
-		UpdateMachineState (&controls, &machine, &data);
-
-		printf("%4x", machine.PC);
-		printf (" ");
-		printf("%x\n", machine.memory[machine.PC]);
-		i = scanf();
-		//printf (" ");
-		//printf("%x", machine.PSR);
-		//printf (" and RS = ");
-		//printf("%x", data.RS);
-		//printf(": ");
-		/*
-		printf (" ");
-		printf("%x\n", machine.memory[machine.PC + count]);
-		*/
-
-
-		/*
-			i = 0;
-			while (i < 8) { // print out all register values
-				printf("%x", machine.R[i]);
-				printf(" ");
-				i++;
-			}
-			printf ("\n");
-		*/
-	}
-	// after completion, close binary output file
-	fclose(f_trace);
-		
 	// generate ASCII output if -s argument passed
 	if (s_flag == 1) {
 		// second argument passed is filename
@@ -108,22 +68,33 @@ int main(int argc, char *argv[]) {
     		printf("Error: cannot write to file\n");
     		return(1);
 		}
+	}
+	// SIMULATE LC4!!!
+	while (machine.PC != 0x80FF) {
+		//printf("%04x", machine.PC);
+		//printf (" ");
+		//printf("%x\n", machine.memory[machine.PC]);
 
-		while (machine.PC != 0x80FF) {
-			//printf("%04x", machine.PC);
-			//printf (" ");
-			//printf("%x", machine.memory[machine.PC]);
-			//printf(": ");
+		// write TRACE output BEFORE executing instructions
+		// write current PC, instruction into array
+		arr[0] = machine.PC;
+		arr[1] = machine.memory[machine.PC];
 
-			// write current PC
-			fprintf(f, "%04x", machine.PC);
+		// simulate one step and end simulation if exception found
+		if (DecodeCurrentInstruction (machine.memory[machine.PC], &controls) != 0)
+			break;
+		if (SimulateDatapath (&controls, &machine, &data) != 0)
+			break;
+		if (UpdateMachineState (&controls, &machine, &data) != 0)
+			break;
 
-			// simulate one step
-			DecodeCurrentInstruction (machine.memory[machine.PC], &controls);
-			SimulateDatapath (&controls, &machine, &data);
-			UpdateMachineState (&controls, &machine, &data);
+		// if no exceptions, actually write PC values
+		fwrite(arr, sizeof(unsigned short int), 2, f_trace);
+		if (s_flag == 1)
+			fprintf(f, "%04x", machine.PC); // write current PC
 
-			// write all the control signals
+		// write ASCII control signals output AFTER instructions
+		if (s_flag == 1) {
 			fprintf(f, " " BINARY_PATTERN, BINARY(controls.PCMux_CTL));
 			fprintf(f, " " BINARY_PATTERN, BINARY(controls.rsMux_CTL));
 			fprintf(f, " " BINARY_PATTERN, BINARY(controls.rtMux_CTL));
@@ -141,12 +112,34 @@ int main(int argc, char *argv[]) {
 			fprintf(f, " " BINARY_PATTERN, BINARY(controls.NZP_WE));
 			fprintf(f, " " BINARY_PATTERN, BINARY(controls.DATA_WE));
 			fprintf(f, " " BINARY_PATTERN, BINARY(controls.Privilege_CTL));
-			fprintf(f, "\n"); // new line
+			fprintf(f, "\r\n"); // new line
 		}
-		// after completion, close ASCII output file
-		fclose(f);
-	}
 
-	// handle exceptions
+		//printf (" ");
+		//printf("%x", machine.PSR);
+		//printf (" and RS = ");
+		//printf("%x", data.RS);
+		//printf(": ");
+		/*
+		printf (" ");
+		printf("%x\n", machine.memory[machine.PC + count]);
+		*/
+
+		/*
+			i = 0;
+			while (i < 8) { // print out all register values
+				printf("%x", machine.R[i]);
+				printf(" ");
+				i++;
+			}
+			printf ("\n");
+		*/
+	}
+	// after completion, close binary output file
+	fclose(f_trace);
+	if (s_flag == 1)
+		fclose(f);
+
+	// return without exceptions
 	return 0;
 }

@@ -251,14 +251,6 @@ int SimulateDatapath (ControlSignals *theControls, MachineState
  	// set output from arith module
  	switch (theControls->Arith_CTL) {
  		case 0: // ADD
- 			/*
- 			printf("adding ");
- 			printf("%x", theDatapath->RS);
- 			printf(" by ");
- 			printf("%x", input);
- 			printf("\n");
- 			*/
-
  			theDatapath->ArithmeticOps = theDatapath->RS + input;
  			break;
  		case 1: // MUL
@@ -268,14 +260,6 @@ int SimulateDatapath (ControlSignals *theControls, MachineState
   			theDatapath->ArithmeticOps = theDatapath->RS - input;
  			break;
  		case 3: // DIV
- 			/*
- 			printf("dividing ");
- 			printf("%d\n", (unsigned)theDatapath->RS);
- 			printf(" by ");
- 			printf("%d\n",  (unsigned)input);
- 			printf(". RT is ");
- 			printf("%d\n", theDatapath->RT);
-  			*/
   			theDatapath->ArithmeticOps =
   				(int) ((unsigned)theDatapath->RS / (unsigned)input);
  			break;
@@ -323,15 +307,18 @@ int SimulateDatapath (ControlSignals *theControls, MachineState
  	}
  	// set output from const module
  	switch (theControls->CONST_CTL) {
- 		case 0: // IMM
+ 		case 0: // CONST or IMM9
  		// SEXT(IMM9)
  			theDatapath->Constants =
  				(signed short int)(theMachineState->memory[PC] << 7) >> 7;
  			break;
- 		case 1: // (RS&xFF)|(UIMM8<<8)
+ 		case 1: // HICONST or (RS&xFF)|(UIMM8<<8)
  			theDatapath->Constants =
  				(theDatapath->RS & 0XFF) | (theMachineState->memory[PC] << 8);
- 			break; 
+ 			// according to Pedro:
+ 			// The rsMux control signal for HICONST is 2, since the instruction need to get the previous value in the register rd.
+ 			theControls->rsMux_CTL = 2;
+ 			break;
  	}
  	switch (theControls->CMP_CTL) {
  		// [0:6]
@@ -395,6 +382,19 @@ int SimulateDatapath (ControlSignals *theControls, MachineState
  			theDatapath->regInputMux = theDatapath->ALUMux;
  			break;
  		case 1: // data memory
+ 			addr = theDatapath->ALUMux;
+ 			// check exception 2. Attempting to read a code section address as data
+			if (0 <= addr && addr <= 0x1FFF || 0x8000 <= addr && addr <= 0x9FFF) {
+				printf("Exception 2. Attempting to read a code section address as data");
+				return 2;
+			}
+			// check exception 3. Attempting to access an address or instruction in the OS section of memory when the processor is in user mode.
+ 			// if privelege bit is 0 and trying to read from OS section
+ 			if (((theMachineState->PSR & 0X8000) == 0) &&
+ 				(0x8000 <= addr) && (addr <= 0xFFFF)) {
+ 				printf("Exception 3. Access OS when in user mode");
+ 				return 3;
+ 			}
  			theDatapath->regInputMux =
  				theMachineState->memory[theDatapath->ALUMux];
  			break;
@@ -439,11 +439,41 @@ int SimulateDatapath (ControlSignals *theControls, MachineState
 
 int UpdateMachineState (ControlSignals *theControls,
 	MachineState *theMachineState, DatapathSignals *theDatapath) {
+	unsigned short int PC = theMachineState->PC;
 	int RD;
+	int addr;
+
+ 	// check exception 1. attempting to execute a data section address as code
+ 	if (0x2000 <= PC && PC <= 0x7FFF || 0xA000 <= PC && PC <= 0xFFFF) {
+ 		printf("Exception 1. Attempting to execute a data section address as code");
+ 		return 1;
+ 	}
+
+ 	// check exception 3. Attempting to access an address or instruction in the OS section of memory when the processor is in user mode.
+ 	// if privelege bit is 0 and inside OS section
+ 	if ((theMachineState->PSR & 0X8000 == 0) && 0x8000 <= PC && PC <= 0xFFFF) {
+ 		printf("Exception 3. Access OS when in user mode");
+ 		return 3;
+ 	}
+
+	// 2. Attempting to read or write a code section address as data
+    //QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ
+    //QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ
+
+ 	if (theControls->Privilege_CTL == 0) {
+		// set privelege bit to 0 - user mode
+		// PSR & 0111 1111 1111 1111
+		theMachineState->PSR = theMachineState->PSR & 0x7FFF;
+	} else if (theControls->Privilege_CTL == 1) {
+		// set privelege bit to 1 - os mode
+		// PSR | 1000 0000 0000 0000
+		theMachineState->PSR = theMachineState->PSR | 0x8000;
+	}
+	theMachineState->PC = theDatapath->PCMux;
 
 	// set RD
 	if (theControls->rdMux_CTL == 0) {
-		RD = INSN_11_9(theMachineState->memory[theMachineState->PC]);
+		RD = INSN_11_9(theMachineState->memory[PC]);
 	} else {
 		RD = 0x07;
 	}
@@ -464,21 +494,23 @@ int UpdateMachineState (ControlSignals *theControls,
 		}
 	}
 	if (theControls->DATA_WE == 1) {
-		theMachineState->memory[theDatapath->ALUMux] = theDatapath->RT;
+		addr = theDatapath->ALUMux;
+		// check exception 2. Attempting to write a code section address as data
+		if (0 <= addr && addr <= 0x1FFF || 0x8000 <= addr && addr <= 0x9FFF) {
+			printf("Exception 2. Attempting to write a code section address as data");
+			return 2;
+		}
+		// check exception 3. Attempting to access an address or instruction in the OS section of memory when the processor is in user mode.
+ 		// if privelege bit is 0 and trying to write to OS section
+ 		if (((theMachineState->PSR & 0X8000) == 0) &&
+ 			(0x8000 <= addr) && (addr <= 0xFFFF)) {
+ 			printf("Exception 3. Access OS when in user mode");
+ 			return 3;
+ 		}
+		theMachineState->memory[addr] = theDatapath->RT;
 	}
 
-	if (theControls->Privilege_CTL == 0) {
-		// set privelege bit to 0 - user mode
-		// PSR & 0111 1111 1111 1111
-		theMachineState->PSR = theMachineState->PSR & 0x7FFF;
-	} else if (theControls->Privilege_CTL == 1) {
-		// set privelege bit to 1 - os mode
-		// PSR | 1000 0000 0000 0000
-		theMachineState->PSR = theMachineState->PSR | 0x8000;
-	}
-	theMachineState->PC = theDatapath->PCMux;
-
-	// return any errors
+	// return without any exception
 	return 0;
 }
 
