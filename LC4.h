@@ -2,6 +2,9 @@
  * LC4.h
  */
 
+#ifndef LC4_H
+#define LC4_H
+
 typedef struct {
 
   // PC the current value of the Program Counter register
@@ -77,3 +80,5 @@ int UpdateMachineState (ControlSignals *theControls, MachineState *theMachineSta
 
 // Reset the machine state as Pennsim would do
 void Reset (MachineState *theMachineState);
+
+#endif
